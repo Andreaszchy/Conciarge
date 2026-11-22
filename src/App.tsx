@@ -9,6 +9,7 @@ import {
   ExternalLink,
   FileSpreadsheet,
   FolderKanban,
+  LayoutGrid,
   LogOut,
   Menu,
   Plus,
@@ -36,12 +37,14 @@ import type { OpinionAnalysis, Survey, SurveyResponseRecord } from './types';
 import { COVER_THEMES } from './types';
 import { exportSurveyToExcel } from './utils/excelExport';
 import { AnalyticsView } from './components/AnalyticsView';
+import { GeneralDashboardView } from './components/GeneralDashboardView';
 import { GuestSurveyView } from './components/GuestSurveyView';
 import { ResponsesTableView } from './components/ResponsesTableView';
 import { ShareSurveyModal } from './components/ShareSurveyModal';
 import { SurveyBuilderView } from './components/SurveyBuilderView';
 import { SurveysListView } from './components/SurveysListView';
 
+type DashboardSection = 'home' | 'encuestas';
 type WorkspaceTab = 'analytics' | 'responses' | 'builder' | 'surveys';
 
 function getPublicSurveyIdFromUrl(): string | null {
@@ -70,6 +73,7 @@ export default function App() {
   const [analyses, setAnalyses] = useState<OpinionAnalysis[]>([]);
 
   // UI state
+  const [activeSection, setActiveSection] = useState<DashboardSection>('home');
   const [activeTab, setActiveTab] = useState<WorkspaceTab>('analytics');
   const [creatingNew, setCreatingNew] = useState(false);
   const [previewSurvey, setPreviewSurvey] = useState<Survey | null>(null);
@@ -469,13 +473,21 @@ export default function App() {
     { id: 'surveys', label: 'Mis encuestas', icon: FolderKanban },
   ];
 
+  const handleOpenSection = (section: DashboardSection) => {
+    setActiveSection(section);
+    setCreatingNew(false);
+    setMobileMenuOpen(false);
+  };
+
   const handleSelectNav = (tab: WorkspaceTab) => {
+    setActiveSection('encuestas');
     setCreatingNew(false);
     setActiveTab(tab);
     setMobileMenuOpen(false);
   };
 
   const handleStartNewSurvey = () => {
+    setActiveSection('encuestas');
     setCreatingNew(true);
     setActiveTab('builder');
     setMobileMenuOpen(false);
@@ -497,76 +509,112 @@ export default function App() {
         </button>
       </div>
 
-      {/* Active Survey Switcher */}
-      <div className="p-4 border-b border-slate-200 space-y-2.5">
-        <label className="block text-[11px] font-medium text-slate-500">Encuesta activa</label>
-        {surveys.length > 0 ? (
-          <select
-            value={selectedSurveyId || ''}
-            onChange={(e) => {
-              setSelectedSurveyId(e.target.value);
-              setCreatingNew(false);
-            }}
-            className="w-full h-9 rounded-lg border border-slate-200 bg-slate-50 px-2.5 text-xs font-medium text-slate-900 focus:bg-white focus:border-teal-700 focus:outline-none truncate"
-          >
-            {surveys.map((s) => (
-              <option key={s.id} value={s.id}>
-                {s.title} ({s.hotelName})
-              </option>
-            ))}
-          </select>
-        ) : (
-          <p className="text-xs text-slate-400">Sin encuestas aún</p>
-        )}
+      {/* Primary Dashboard Sections */}
+      <nav className="p-3 border-b border-slate-200 space-y-1">
+        <button
+          type="button"
+          onClick={() => handleOpenSection('home')}
+          className={`w-full flex items-center gap-2.5 px-3 py-2.5 rounded-lg text-sm font-medium transition-colors whitespace-nowrap cursor-pointer ${
+            activeSection === 'home'
+              ? 'bg-slate-900 text-white'
+              : 'text-slate-600 hover:bg-slate-100 hover:text-slate-900'
+          }`}
+        >
+          <LayoutGrid className="w-4 h-4 shrink-0" />
+          <span className="truncate">Panel general</span>
+        </button>
 
         <button
           type="button"
-          onClick={handleStartNewSurvey}
-          className="w-full inline-flex items-center justify-center gap-1.5 h-9 px-3 text-xs font-semibold text-white bg-slate-900 rounded-lg hover:bg-slate-800 transition-colors cursor-pointer"
+          onClick={() => handleOpenSection('encuestas')}
+          className={`w-full flex items-center gap-2.5 px-3 py-2.5 rounded-lg text-sm font-medium transition-colors whitespace-nowrap cursor-pointer ${
+            activeSection === 'encuestas'
+              ? 'bg-slate-900 text-white'
+              : 'text-slate-600 hover:bg-slate-100 hover:text-slate-900'
+          }`}
         >
-          <Plus className="w-3.5 h-3.5" />
-          Nueva encuesta
+          <ClipboardList className="w-4 h-4 shrink-0" />
+          <span className="truncate">Encuestas</span>
         </button>
-      </div>
+      </nav>
 
-      {/* Navigation Links */}
-      <nav className="flex-1 p-3 space-y-1">
-        {navItems.map((item) => {
-          const Icon = item.icon;
-          const isActive = activeTab === item.id && !(item.id === 'builder' && creatingNew);
-          return (
-            <button
-              key={item.id}
-              type="button"
-              onClick={() => handleSelectNav(item.id)}
-              className={`w-full flex items-center gap-2.5 px-3 py-2.5 rounded-lg text-sm font-medium transition-colors whitespace-nowrap cursor-pointer ${
-                isActive
-                  ? 'bg-teal-50 text-teal-900'
-                  : 'text-slate-600 hover:bg-slate-100 hover:text-slate-900'
-              }`}
-            >
-              <Icon className="w-4 h-4 shrink-0" />
-              <span className="truncate">{item.label}</span>
-            </button>
-          );
-        })}
+      {/* Contextual Encuestas Sub-Workspace Controls */}
+      {activeSection === 'encuestas' ? (
+        <div className="flex-1 overflow-y-auto flex flex-col">
+          {/* Active Survey Switcher */}
+          <div className="p-4 border-b border-slate-200 space-y-2.5">
+            <label className="block text-[11px] font-medium text-slate-500">Encuesta activa</label>
+            {surveys.length > 0 ? (
+              <select
+                value={selectedSurveyId || ''}
+                onChange={(e) => {
+                  setSelectedSurveyId(e.target.value);
+                  setCreatingNew(false);
+                }}
+                className="w-full h-9 rounded-lg border border-slate-200 bg-slate-50 px-2.5 text-xs font-medium text-slate-900 focus:bg-white focus:border-teal-700 focus:outline-none truncate"
+              >
+                {surveys.map((s) => (
+                  <option key={s.id} value={s.id}>
+                    {s.title} ({s.hotelName})
+                  </option>
+                ))}
+              </select>
+            ) : (
+              <p className="text-xs text-slate-400">Sin encuestas aún</p>
+            )}
 
-        {activeSurvey && (
-          <div className="pt-4 mt-4 border-t border-slate-200 px-1 space-y-1">
             <button
               type="button"
-              onClick={() => {
-                setMobileMenuOpen(false);
-                setPreviewSurvey(activeSurvey);
-              }}
-              className="w-full flex items-center gap-2.5 px-3 py-2 rounded-lg text-xs font-medium text-slate-600 hover:bg-slate-100 hover:text-slate-900 transition-colors cursor-pointer"
+              onClick={handleStartNewSurvey}
+              className="w-full inline-flex items-center justify-center gap-1.5 h-9 px-3 text-xs font-semibold text-white bg-teal-700 rounded-lg hover:bg-teal-800 transition-colors cursor-pointer"
             >
-              <ExternalLink className="w-3.5 h-3.5 shrink-0" />
-              Probar como huésped
+              <Plus className="w-3.5 h-3.5" />
+              Nueva encuesta
             </button>
           </div>
-        )}
-      </nav>
+
+          {/* Encuestas Sub-Navigation */}
+          <nav className="flex-1 p-3 space-y-1">
+            {navItems.map((item) => {
+              const Icon = item.icon;
+              const isActive = activeTab === item.id && !(item.id === 'builder' && creatingNew);
+              return (
+                <button
+                  key={item.id}
+                  type="button"
+                  onClick={() => handleSelectNav(item.id)}
+                  className={`w-full flex items-center gap-2.5 px-3 py-2.5 rounded-lg text-sm font-medium transition-colors whitespace-nowrap cursor-pointer ${
+                    isActive
+                      ? 'bg-teal-50 text-teal-900'
+                      : 'text-slate-600 hover:bg-slate-100 hover:text-slate-900'
+                  }`}
+                >
+                  <Icon className="w-4 h-4 shrink-0" />
+                  <span className="truncate">{item.label}</span>
+                </button>
+              );
+            })}
+
+            {activeSurvey && (
+              <div className="pt-4 mt-4 border-t border-slate-200 px-1 space-y-1">
+                <button
+                  type="button"
+                  onClick={() => {
+                    setMobileMenuOpen(false);
+                    setPreviewSurvey(activeSurvey);
+                  }}
+                  className="w-full flex items-center gap-2.5 px-3 py-2 rounded-lg text-xs font-medium text-slate-600 hover:bg-slate-100 hover:text-slate-900 transition-colors cursor-pointer"
+                >
+                  <ExternalLink className="w-3.5 h-3.5 shrink-0" />
+                  Probar como huésped
+                </button>
+              </div>
+            )}
+          </nav>
+        </div>
+      ) : (
+        <div className="flex-1" />
+      )}
 
       {/* Account Footer */}
       <div className="p-4 border-t border-slate-200 flex items-center justify-between gap-2">
@@ -623,17 +671,33 @@ export default function App() {
               <Menu className="w-5 h-5" />
             </button>
             <div className="flex items-center gap-2 text-sm min-w-0">
-              <span className="text-slate-400 hidden sm:inline truncate max-w-[180px]">
-                {activeSurvey ? activeSurvey.hotelName : 'Panel hotelero'}
-              </span>
-              <span className="text-slate-300 hidden sm:inline" aria-hidden="true">
-                /
-              </span>
-              <h1 className="font-bold text-slate-900 truncate">{tabMeta[activeTab].label}</h1>
+              {activeSection === 'home' ? (
+                <h1 className="font-bold text-slate-900 truncate">Panel general</h1>
+              ) : (
+                <>
+                  <button
+                    type="button"
+                    onClick={() => handleOpenSection('home')}
+                    className="text-slate-400 hover:text-slate-700 transition-colors hidden sm:inline whitespace-nowrap cursor-pointer"
+                  >
+                    Panel general
+                  </button>
+                  <span className="text-slate-300 hidden sm:inline" aria-hidden="true">
+                    /
+                  </span>
+                  <span className="text-slate-500 hidden md:inline whitespace-nowrap">
+                    Encuestas
+                  </span>
+                  <span className="text-slate-300 hidden md:inline" aria-hidden="true">
+                    /
+                  </span>
+                  <h1 className="font-bold text-slate-900 truncate">{tabMeta[activeTab].label}</h1>
+                </>
+              )}
             </div>
           </div>
 
-          {activeSurvey && !creatingNew && (
+          {activeSection === 'encuestas' && activeSurvey && !creatingNew && (
             <div className="flex items-center gap-2.5 shrink-0">
               <button
                 type="button"
@@ -658,7 +722,14 @@ export default function App() {
 
         {/* Viewport Body */}
         <main className="flex-1 p-4 sm:p-8 max-w-[1440px] w-full mx-auto">
-          {surveysLoading ? (
+          {activeSection === 'home' ? (
+            <GeneralDashboardView
+              userName={user.displayName}
+              surveys={surveys}
+              loading={surveysLoading}
+              onOpenEncuestas={() => handleOpenSection('encuestas')}
+            />
+          ) : surveysLoading ? (
             <div className="space-y-4 animate-pulse">
               <div className="h-28 bg-white border border-slate-200 rounded-xl" />
               <div className="h-72 bg-white border border-slate-200 rounded-xl" />
