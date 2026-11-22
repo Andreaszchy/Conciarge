@@ -1,0 +1,8 @@
+{
+  "name": "ConcIArge — Encuestas de Satisfacción para Hoteles",
+  "description": "Generador de encuestas online sin registro para huéspedes de hotel, exportación a Excel y análisis automático de opiniones con IA.",
+  "requestFramePermissions": [],
+  "majorCapabilities": [
+    "MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"
+  ]
+}

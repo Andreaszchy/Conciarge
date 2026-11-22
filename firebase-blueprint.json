@@ -1,0 +1,274 @@
+{
+  "entities": {
+    "Survey": {
+      "title": "Survey",
+      "description": "Hotel guest satisfaction survey template and configuration owned by a hotel manager.",
+      "type": "object",
+      "properties": {
+        "ownerId": {
+          "type": "string",
+          "description": "Firebase Auth UID of the hotel manager who owns this survey.",
+          "minLength": 1,
+          "maxLength": 128,
+          "pattern": "^[a-zA-Z0-9_\\-]+$"
+        },
+        "hotelName": {
+          "type": "string",
+          "description": "Display name of the hotel property.",
+          "minLength": 1,
+          "maxLength": 120
+        },
+        "title": {
+          "type": "string",
+          "description": "Title of the satisfaction survey shown to guests.",
+          "minLength": 1,
+          "maxLength": 160
+        },
+        "welcomeMessage": {
+          "type": "string",
+          "description": "Short introductory message welcoming guests to share feedback.",
+          "maxLength": 600
+        },
+        "thankYouMessage": {
+          "type": "string",
+          "description": "Confirmation message shown after a guest submits their response.",
+          "maxLength": 400
+        },
+        "coverTheme": {
+          "type": "string",
+          "description": "Selected visual header banner theme for the guest survey.",
+          "enum": ["lobby", "suite", "dining"]
+        },
+        "status": {
+          "type": "string",
+          "description": "Publication state controlling whether guests can access and submit the survey.",
+          "enum": ["active", "paused"]
+        },
+        "allowAnonymous": {
+          "type": "boolean",
+          "description": "Whether guests can submit feedback completely anonymously without registration."
+        },
+        "collectName": {
+          "type": "boolean",
+          "description": "Whether to show an optional guest name field."
+        },
+        "collectEmail": {
+          "type": "boolean",
+          "description": "Whether to show an optional guest email field."
+        },
+        "collectRoom": {
+          "type": "boolean",
+          "description": "Whether to show an optional room number field."
+        },
+        "collectStayType": {
+          "type": "boolean",
+          "description": "Whether to show an optional stay type selector (leisure, business, family, couple)."
+        },
+        "autoAnalyze": {
+          "type": "boolean",
+          "description": "Whether AI analysis runs automatically when viewing new responses."
+        },
+        "questions": {
+          "type": "array",
+          "description": "Ordered list of survey questions (1 to 25 items)."
+        },
+        "createdAt": {
+          "type": "string",
+          "format": "date-time",
+          "description": "Server timestamp when the survey was created."
+        },
+        "updatedAt": {
+          "type": "string",
+          "format": "date-time",
+          "description": "Server timestamp when the survey was last updated."
+        }
+      },
+      "required": [
+        "ownerId",
+        "hotelName",
+        "title",
+        "welcomeMessage",
+        "thankYouMessage",
+        "coverTheme",
+        "status",
+        "allowAnonymous",
+        "collectName",
+        "collectEmail",
+        "collectRoom",
+        "collectStayType",
+        "autoAnalyze",
+        "questions",
+        "createdAt",
+        "updatedAt"
+      ]
+    },
+    "SurveyResponse": {
+      "title": "SurveyResponse",
+      "description": "Online satisfaction response submitted by a hotel guest without mandatory registration.",
+      "type": "object",
+      "properties": {
+        "surveyId": {
+          "type": "string",
+          "description": "Parent survey document ID.",
+          "minLength": 1,
+          "maxLength": 128,
+          "pattern": "^[a-zA-Z0-9_\\-]+$"
+        },
+        "surveyOwnerId": {
+          "type": "string",
+          "description": "Owner UID copied from the parent survey for secure list queries.",
+          "minLength": 1,
+          "maxLength": 128,
+          "pattern": "^[a-zA-Z0-9_\\-]+$"
+        },
+        "isAnonymous": {
+          "type": "boolean",
+          "description": "True if the guest chose not to provide identifying contact details."
+        },
+        "guestName": {
+          "type": "string",
+          "description": "Optional guest name (empty string when anonymous).",
+          "maxLength": 120
+        },
+        "guestEmail": {
+          "type": "string",
+          "description": "Optional guest email (empty string when anonymous).",
+          "maxLength": 160
+        },
+        "roomNumber": {
+          "type": "string",
+          "description": "Optional room number (empty string when omitted).",
+          "maxLength": 32
+        },
+        "stayType": {
+          "type": "string",
+          "description": "Optional trip category.",
+          "enum": ["", "Ocio", "Negocios", "Familia", "Pareja", "Otro"]
+        },
+        "overallRating": {
+          "type": "number",
+          "description": "Computed average 1-5 star score across rating questions (0 if none)."
+        },
+        "npsScore": {
+          "type": "number",
+          "description": "Net Promoter Score value from 0 to 10 (-1 if survey has no NPS question)."
+        },
+        "answers": {
+          "type": "object",
+          "description": "Map of questionId to answer value (number or string)."
+        },
+        "openComment": {
+          "type": "string",
+          "description": "Consolidated free-text opinion provided by the guest for automatic AI analysis.",
+          "maxLength": 2500
+        },
+        "submittedAt": {
+          "type": "string",
+          "format": "date-time",
+          "description": "Server timestamp when the guest submitted the survey."
+        }
+      },
+      "required": [
+        "surveyId",
+        "surveyOwnerId",
+        "isAnonymous",
+        "guestName",
+        "guestEmail",
+        "roomNumber",
+        "stayType",
+        "overallRating",
+        "npsScore",
+        "answers",
+        "openComment",
+        "submittedAt"
+      ]
+    },
+    "OpinionAnalysis": {
+      "title": "OpinionAnalysis",
+      "description": "Automated Gemini AI analysis snapshot summarizing guest opinions for a hotel survey.",
+      "type": "object",
+      "properties": {
+        "surveyId": {
+          "type": "string",
+          "description": "Parent survey document ID.",
+          "minLength": 1,
+          "maxLength": 128,
+          "pattern": "^[a-zA-Z0-9_\\-]+$"
+        },
+        "surveyOwnerId": {
+          "type": "string",
+          "description": "Owner UID of the hotel manager.",
+          "minLength": 1,
+          "maxLength": 128,
+          "pattern": "^[a-zA-Z0-9_\\-]+$"
+        },
+        "responseCount": {
+          "type": "number",
+          "description": "Number of guest responses included in this analysis."
+        },
+        "executiveSummary": {
+          "type": "string",
+          "description": "Concise executive summary of guest satisfaction.",
+          "minLength": 1,
+          "maxLength": 2500
+        },
+        "sentiment": {
+          "type": "object",
+          "description": "Counts of positive, neutral, and negative responses."
+        },
+        "strengths": {
+          "type": "array",
+          "description": "Top highlighted strengths mentioned by guests."
+        },
+        "improvements": {
+          "type": "array",
+          "description": "Prioritized improvement areas by hotel department."
+        },
+        "actionPlan": {
+          "type": "array",
+          "description": "Concrete next steps recommended for hotel management."
+        },
+        "themes": {
+          "type": "array",
+          "description": "Recurring topics with sentiment and mention counts."
+        },
+        "responseSentiments": {
+          "type": "object",
+          "description": "Map of responseId to per-response sentiment classification and brief summary."
+        },
+        "createdAt": {
+          "type": "string",
+          "format": "date-time",
+          "description": "Server timestamp when the analysis was stored."
+        }
+      },
+      "required": [
+        "surveyId",
+        "surveyOwnerId",
+        "responseCount",
+        "executiveSummary",
+        "sentiment",
+        "strengths",
+        "improvements",
+        "actionPlan",
+        "themes",
+        "responseSentiments",
+        "createdAt"
+      ]
+    }
+  },
+  "firestore": {
+    "/surveys/{surveyId}": {
+      "schema": { "$ref": "#/entities/Survey" },
+      "description": "Hotel satisfaction surveys managed by authenticated hotel staff and publicly readable by ID when active."
+    },
+    "/surveys/{surveyId}/responses/{responseId}": {
+      "schema": { "$ref": "#/entities/SurveyResponse" },
+      "description": "Guest responses submitted online (anonymously or with optional contact details); readable only by the survey owner."
+    },
+    "/surveys/{surveyId}/analyses/{analysisId}": {
+      "schema": { "$ref": "#/entities/OpinionAnalysis" },
+      "description": "Saved automated AI opinion analyses owned by the survey manager."
+    }
+  }
+}

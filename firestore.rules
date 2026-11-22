@@ -1,0 +1,225 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    // Global Safety Net (Default Deny)
+    match /{document=**} {
+      allow read, write: if false;
+    }
+
+    // --- Global Hardened Primitives ---
+    function isValidId(id) {
+      return id is string && id.size() >= 1 && id.size() <= 128 && id.matches('^[a-zA-Z0-9_\\-]+$');
+    }
+
+    function incoming() {
+      return request.resource.data;
+    }
+
+    function existing() {
+      return resource.data;
+    }
+
+    function isSignedIn() {
+      return request.auth != null;
+    }
+
+    function isVerifiedUser() {
+      return isSignedIn() && request.auth.token.email_verified == true;
+    }
+
+    function isOwner(ownerId) {
+      return isSignedIn() && request.auth.uid == ownerId;
+    }
+
+    // --- Entity Validation Blueprints ---
+    function isValidSurvey(data) {
+      return data.keys().hasAll([
+          'ownerId', 'hotelName', 'title', 'welcomeMessage', 'thankYouMessage',
+          'coverTheme', 'status', 'allowAnonymous', 'collectName', 'collectEmail',
+          'collectRoom', 'collectStayType', 'autoAnalyze', 'questions',
+          'createdAt', 'updatedAt'
+        ])
+        && data.keys().hasOnly([
+          'ownerId', 'hotelName', 'title', 'welcomeMessage', 'thankYouMessage',
+          'coverTheme', 'status', 'allowAnonymous', 'collectName', 'collectEmail',
+          'collectRoom', 'collectStayType', 'autoAnalyze', 'questions',
+          'createdAt', 'updatedAt'
+        ])
+        && isValidId(data.ownerId)
+        && data.ownerId == request.auth.uid
+        && data.hotelName is string && data.hotelName.size() >= 1 && data.hotelName.size() <= 120
+        && data.title is string && data.title.size() >= 1 && data.title.size() <= 160
+        && data.welcomeMessage is string && data.welcomeMessage.size() <= 600
+        && data.thankYouMessage is string && data.thankYouMessage.size() <= 400
+        && data.coverTheme in ['lobby', 'suite', 'dining']
+        && data.status in ['active', 'paused']
+        && data.allowAnonymous is bool
+        && data.collectName is bool
+        && data.collectEmail is bool
+        && data.collectRoom is bool
+        && data.collectStayType is bool
+        && data.autoAnalyze is bool
+        && data.questions is list && data.questions.size() >= 1 && data.questions.size() <= 25
+        && data.questions[0] is map
+        && data.createdAt is timestamp
+        && data.updatedAt is timestamp;
+    }
+
+    function isValidResponse(data, surveyId) {
+      return data.keys().hasAll([
+          'surveyId', 'surveyOwnerId', 'isAnonymous', 'guestName', 'guestEmail',
+          'roomNumber', 'stayType', 'overallRating', 'npsScore', 'answers',
+          'openComment', 'submittedAt'
+        ])
+        && data.keys().hasOnly([
+          'surveyId', 'surveyOwnerId', 'isAnonymous', 'guestName', 'guestEmail',
+          'roomNumber', 'stayType', 'overallRating', 'npsScore', 'answers',
+          'openComment', 'submittedAt'
+        ])
+        && isValidId(data.surveyId)
+        && data.surveyId == surveyId
+        && isValidId(data.surveyOwnerId)
+        && data.isAnonymous is bool
+        && data.guestName is string && data.guestName.size() <= 120
+        && data.guestEmail is string && data.guestEmail.size() <= 160
+        && data.roomNumber is string && data.roomNumber.size() <= 32
+        && data.stayType in ['', 'Ocio', 'Negocios', 'Familia', 'Pareja', 'Otro']
+        && data.overallRating is number && data.overallRating >= 0 && data.overallRating <= 5
+        && data.npsScore is number && data.npsScore >= -1 && data.npsScore <= 10
+        && data.answers is map && data.answers.size() <= 30
+        && data.openComment is string && data.openComment.size() <= 2500
+        && data.submittedAt is timestamp;
+    }
+
+    function isValidAnalysis(data, surveyId) {
+      return data.keys().hasAll([
+          'surveyId', 'surveyOwnerId', 'responseCount', 'executiveSummary',
+          'sentiment', 'strengths', 'improvements', 'actionPlan', 'themes',
+          'responseSentiments', 'createdAt'
+        ])
+        && data.keys().hasOnly([
+          'surveyId', 'surveyOwnerId', 'responseCount', 'executiveSummary',
+          'sentiment', 'strengths', 'improvements', 'actionPlan', 'themes',
+          'responseSentiments', 'createdAt'
+        ])
+        && isValidId(data.surveyId)
+        && data.surveyId == surveyId
+        && isValidId(data.surveyOwnerId)
+        && data.surveyOwnerId == request.auth.uid
+        && data.responseCount is number && data.responseCount >= 0 && data.responseCount <= 100000
+        && data.executiveSummary is string && data.executiveSummary.size() >= 1 && data.executiveSummary.size() <= 2500
+        && data.sentiment is map
+        && data.sentiment.keys().hasAll(['positive', 'neutral', 'negative'])
+        && data.sentiment.keys().hasOnly(['positive', 'neutral', 'negative'])
+        && data.strengths is list && data.strengths.size() <= 10
+        && (data.strengths.size() == 0 || data.strengths[0] is map)
+        && data.improvements is list && data.improvements.size() <= 10
+        && (data.improvements.size() == 0 || data.improvements[0] is map)
+        && data.actionPlan is list && data.actionPlan.size() <= 10
+        && (data.actionPlan.size() == 0 || data.actionPlan[0] is string)
+        && data.themes is list && data.themes.size() <= 12
+        && (data.themes.size() == 0 || data.themes[0] is map)
+        && data.responseSentiments is map && data.responseSentiments.size() <= 200
+        && data.createdAt is timestamp;
+    }
+
+    // --- Collection: /surveys/{surveyId} ---
+    match /surveys/{surveyId} {
+      // Unauthenticated guests can get a single active survey by exact ID; owners can always get their own.
+      allow get: if isValidId(surveyId) && (
+        existing().status == 'active' || isOwner(existing().ownerId)
+      );
+
+      // Strict query-enforced list: only authenticated owners listing their own surveys.
+      allow list: if isSignedIn() && existing().ownerId == request.auth.uid;
+
+      allow create: if isVerifiedUser()
+        && isValidId(surveyId)
+        && isValidSurvey(incoming())
+        && incoming().ownerId == request.auth.uid
+        && incoming().createdAt == request.time
+        && incoming().updatedAt == request.time;
+
+      allow update: if isVerifiedUser()
+        && isValidId(surveyId)
+        && isValidSurvey(incoming())
+        && isOwner(existing().ownerId)
+        && incoming().ownerId == existing().ownerId
+        && incoming().createdAt == existing().createdAt
+        && incoming().updatedAt == request.time
+        && (
+          // Action: Edit survey configuration & questions
+          incoming().diff(existing()).affectedKeys().hasOnly([
+            'hotelName', 'title', 'welcomeMessage', 'thankYouMessage',
+            'coverTheme', 'status', 'allowAnonymous', 'collectName',
+            'collectEmail', 'collectRoom', 'collectStayType', 'autoAnalyze',
+            'questions', 'updatedAt'
+          ])
+          ||
+          // Action: Toggle status only
+          incoming().diff(existing()).affectedKeys().hasOnly(['status', 'updatedAt'])
+        );
+
+      allow delete: if isVerifiedUser()
+        && isValidId(surveyId)
+        && isOwner(existing().ownerId);
+
+      // --- Subcollection: /surveys/{surveyId}/responses/{responseId} ---
+      match /responses/{responseId} {
+        // Strict PII Isolation: only the survey owner may read, list, or delete responses.
+        allow get: if isSignedIn()
+          && isValidId(surveyId)
+          && isValidId(responseId)
+          && existing().surveyOwnerId == request.auth.uid;
+
+        allow list: if isSignedIn()
+          && existing().surveyOwnerId == request.auth.uid;
+
+        // Public online submission: guests do NOT need to register, provided parent survey exists & is active.
+        allow create: if isValidId(surveyId)
+          && isValidId(responseId)
+          && isValidResponse(incoming(), surveyId)
+          && incoming().submittedAt == request.time
+          && exists(/databases/$(database)/documents/surveys/$(surveyId))
+          && get(/databases/$(database)/documents/surveys/$(surveyId)).data.status == 'active'
+          && incoming().surveyOwnerId == get(/databases/$(database)/documents/surveys/$(surveyId)).data.ownerId;
+
+        // Responses are immutable once submitted.
+        allow update: if false;
+
+        allow delete: if isVerifiedUser()
+          && isValidId(surveyId)
+          && isValidId(responseId)
+          && existing().surveyOwnerId == request.auth.uid;
+      }
+
+      // --- Subcollection: /surveys/{surveyId}/analyses/{analysisId} ---
+      match /analyses/{analysisId} {
+        allow get: if isSignedIn()
+          && isValidId(surveyId)
+          && isValidId(analysisId)
+          && existing().surveyOwnerId == request.auth.uid;
+
+        allow list: if isSignedIn()
+          && existing().surveyOwnerId == request.auth.uid;
+
+        allow create: if isVerifiedUser()
+          && isValidId(surveyId)
+          && isValidId(analysisId)
+          && isValidAnalysis(incoming(), surveyId)
+          && incoming().surveyOwnerId == request.auth.uid
+          && incoming().createdAt == request.time
+          && exists(/databases/$(database)/documents/surveys/$(surveyId))
+          && get(/databases/$(database)/documents/surveys/$(surveyId)).data.ownerId == request.auth.uid;
+
+        allow update: if false;
+
+        allow delete: if isVerifiedUser()
+          && isValidId(surveyId)
+          && isValidId(analysisId)
+          && existing().surveyOwnerId == request.auth.uid;
+      }
+    }
+  }
+}
