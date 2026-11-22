@@ -21,6 +21,7 @@ import type {
   SurveyQuestion,
   SurveyResponseRecord,
   SurveyStatus,
+  SurveyType,
 } from '../types';
 import { LIMITS } from '../types';
 
@@ -123,10 +124,12 @@ export function subscribeToSurveyAnalyses(
 
 export interface SurveyDraftInput {
   hotelName: string;
+  hotelLocation: string;
   title: string;
   welcomeMessage: string;
   thankYouMessage: string;
   coverTheme: CoverTheme;
+  surveyType: SurveyType;
   status: SurveyStatus;
   allowAnonymous: boolean;
   collectName: boolean;
@@ -161,10 +164,12 @@ export async function createSurvey(ownerId: string, input: SurveyDraftInput): Pr
   const payload = {
     ownerId,
     hotelName: input.hotelName.trim().slice(0, LIMITS.HOTEL_NAME_MAX) || 'Mi Hotel',
+    hotelLocation: input.hotelLocation.trim().slice(0, LIMITS.HOTEL_LOCATION_MAX),
     title: input.title.trim().slice(0, LIMITS.TITLE_MAX) || 'Encuesta de Satisfacción',
     welcomeMessage: input.welcomeMessage.trim().slice(0, LIMITS.WELCOME_MAX),
     thankYouMessage: input.thankYouMessage.trim().slice(0, LIMITS.THANK_YOU_MAX),
     coverTheme: input.coverTheme,
+    surveyType: input.surveyType,
     status: input.status,
     allowAnonymous: Boolean(input.allowAnonymous),
     collectName: Boolean(input.collectName),
@@ -192,10 +197,12 @@ export async function updateSurvey(
   const path = `surveys/${surveyId}`;
   const updates = {
     hotelName: input.hotelName.trim().slice(0, LIMITS.HOTEL_NAME_MAX) || 'Mi Hotel',
+    hotelLocation: input.hotelLocation.trim().slice(0, LIMITS.HOTEL_LOCATION_MAX),
     title: input.title.trim().slice(0, LIMITS.TITLE_MAX) || 'Encuesta de Satisfacción',
     welcomeMessage: input.welcomeMessage.trim().slice(0, LIMITS.WELCOME_MAX),
     thankYouMessage: input.thankYouMessage.trim().slice(0, LIMITS.THANK_YOU_MAX),
     coverTheme: input.coverTheme,
+    surveyType: input.surveyType,
     status: input.status,
     allowAnonymous: Boolean(input.allowAnonymous),
     collectName: Boolean(input.collectName),
@@ -350,11 +357,13 @@ export async function submitGuestResponse(
 export async function seedSampleHotelSurvey(ownerId: string): Promise<string> {
   const base = SURVEY_TEMPLATES[0];
   const surveyId = await createSurvey(ownerId, {
-    hotelName: 'Hotel Mirador del Alba',
+    hotelName: 'Hotel CID',
+    hotelLocation: 'Hotel CID',
     title: base.defaultTitle,
     welcomeMessage: base.defaultWelcome,
     thankYouMessage: base.defaultThankYou,
     coverTheme: base.coverTheme,
+    surveyType: base.surveyType,
     status: 'active',
     allowAnonymous: true,
     collectName: true,

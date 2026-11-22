@@ -1,5 +1,6 @@
 import * as XLSX from 'xlsx';
 import type { OpinionAnalysis, Survey, SurveyResponseRecord } from '../types';
+import { resolveHotelLocation } from '../types';
 
 function formatTimestamp(ts: SurveyResponseRecord['submittedAt']): string {
   if (!ts) return '';
@@ -146,7 +147,8 @@ export function exportSurveyToExcel(
 
   // Sheet 2: Executive KPIs & Area Breakdown
   const summaryRows: Array<Record<string, string | number>> = [
-    { Indicador: 'Hotel', Valor: survey.hotelName },
+    { Indicador: 'Hotel / Propiedad', Valor: resolveHotelLocation(survey) },
+    { Indicador: 'Establecimiento / Restaurante', Valor: survey.hotelName },
     { Indicador: 'Encuesta', Valor: survey.title },
     { Indicador: 'Total respuestas', Valor: metrics.total },
     { Indicador: 'Satisfacción media (sobre 5)', Valor: metrics.avgRating },

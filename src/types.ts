@@ -13,6 +13,8 @@ export type QuestionCategory =
 
 export type CoverTheme = 'lobby' | 'suite' | 'dining';
 
+export type SurveyType = 'estancia' | 'rapida' | 'gastronomia' | 'spa' | 'personalizada';
+
 export type SurveyStatus = 'active' | 'paused';
 
 export type StayType = '' | 'Ocio' | 'Negocios' | 'Familia' | 'Pareja' | 'Otro';
@@ -30,10 +32,12 @@ export interface Survey {
   id: string;
   ownerId: string;
   hotelName: string;
+  hotelLocation?: string;
   title: string;
   welcomeMessage: string;
   thankYouMessage: string;
   coverTheme: CoverTheme;
+  surveyType?: SurveyType;
   status: SurveyStatus;
   allowAnonymous: boolean;
   collectName: boolean;
@@ -109,6 +113,7 @@ export interface OpinionAnalysis {
 // Blueprint-synchronized volumetric limits
 export const LIMITS = {
   HOTEL_NAME_MAX: 120,
+  HOTEL_LOCATION_MAX: 120,
   TITLE_MAX: 160,
   WELCOME_MAX: 600,
   THANK_YOU_MAX: 400,
@@ -157,3 +162,67 @@ export const STAY_TYPES: Exclude<StayType, ''>[] = [
   'Pareja',
   'Otro',
 ];
+
+export const SURVEY_TYPE_LABELS: Record<SurveyType, string> = {
+  estancia: 'Estancia Completa',
+  rapida: 'Preguntas Rápidas',
+  gastronomia: 'Restaurante y Desayuno',
+  spa: 'Spa y Bienestar',
+  personalizada: 'Personalizada',
+};
+
+export const SURVEY_TYPES: SurveyType[] = [
+  'estancia',
+  'rapida',
+  'gastronomia',
+  'spa',
+  'personalizada',
+];
+
+export function resolveSurveyType(survey: Pick<Survey, 'surveyType' | 'coverTheme' | 'title' | 'questions'>): SurveyType {
+  if (survey.surveyType && survey.surveyType in SURVEY_TYPE_LABELS) {
+    return survey.surveyType;
+  }
+  const titleLower = (survey.title || '').toLowerCase();
+  if (
+    survey.coverTheme === 'dining' ||
+    titleLower.includes('restaurante') ||
+    titleLower.includes('desayuno') ||
+    titleLower.includes('gastronom')
+  ) {
+    return 'gastronomia';
+  }
+  if (titleLower.includes('spa') || titleLower.includes('bienestar') || titleLower.includes('wellness')) {
+    return 'spa';
+  }
+  if (
+    survey.coverTheme === 'suite' ||
+    titleLower.includes('rápid') ||
+    titleLower.includes('rapid') ||
+    titleLower.includes('express') ||
+    (survey.questions && survey.questions.length <= 4)
+  ) {
+    return 'rapida';
+  }
+  return 'estancia';
+}
+
+export function resolveHotelLocation(
+  survey: Pick<Survey, 'hotelLocation' | 'hotelName' | 'title'>
+): string {
+  const explicit = (survey.hotelLocation || '').trim();
+  if (explicit) return explicit;
+
+  // Backward-compatible detection for surveys that include the hotel name inside parentheses in the title
+  const title = (survey.title || '').trim();
+  const parenMatches = title.match(/\(([^()]+)\)/g);
+  if (parenMatches && parenMatches.length > 0) {
+    const lastMatch = parenMatches[parenMatches.length - 1];
+    const extracted = lastMatch.slice(1, -1).trim();
+    if (extracted) return extracted;
+  }
+
+  return (survey.hotelName || '').trim() || 'Sin hotel asignado';
+}
+
+

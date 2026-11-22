@@ -41,18 +41,20 @@ service cloud.firestore {
           'createdAt', 'updatedAt'
         ])
         && data.keys().hasOnly([
-          'ownerId', 'hotelName', 'title', 'welcomeMessage', 'thankYouMessage',
-          'coverTheme', 'status', 'allowAnonymous', 'collectName', 'collectEmail',
-          'collectRoom', 'collectStayType', 'autoAnalyze', 'questions',
-          'createdAt', 'updatedAt'
+          'ownerId', 'hotelName', 'hotelLocation', 'title', 'welcomeMessage',
+          'thankYouMessage', 'coverTheme', 'surveyType', 'status', 'allowAnonymous',
+          'collectName', 'collectEmail', 'collectRoom', 'collectStayType',
+          'autoAnalyze', 'questions', 'createdAt', 'updatedAt'
         ])
         && isValidId(data.ownerId)
         && data.ownerId == request.auth.uid
         && data.hotelName is string && data.hotelName.size() >= 1 && data.hotelName.size() <= 120
+        && (!('hotelLocation' in data) || (data.hotelLocation is string && data.hotelLocation.size() <= 120))
         && data.title is string && data.title.size() >= 1 && data.title.size() <= 160
         && data.welcomeMessage is string && data.welcomeMessage.size() <= 600
         && data.thankYouMessage is string && data.thankYouMessage.size() <= 400
         && data.coverTheme in ['lobby', 'suite', 'dining']
+        && (!('surveyType' in data) || data.surveyType in ['estancia', 'rapida', 'gastronomia', 'spa', 'personalizada'])
         && data.status in ['active', 'paused']
         && data.allowAnonymous is bool
         && data.collectName is bool
@@ -151,8 +153,8 @@ service cloud.firestore {
         && (
           // Action: Edit survey configuration & questions
           incoming().diff(existing()).affectedKeys().hasOnly([
-            'hotelName', 'title', 'welcomeMessage', 'thankYouMessage',
-            'coverTheme', 'status', 'allowAnonymous', 'collectName',
+            'hotelName', 'hotelLocation', 'title', 'welcomeMessage', 'thankYouMessage',
+            'coverTheme', 'surveyType', 'status', 'allowAnonymous', 'collectName',
             'collectEmail', 'collectRoom', 'collectStayType', 'autoAnalyze',
             'questions', 'updatedAt'
           ])

@@ -17,12 +17,22 @@ import type {
   Survey,
   SurveyQuestion,
   SurveyStatus,
+  SurveyType,
 } from '../types';
-import { COVER_THEMES, LIMITS, QUESTION_CATEGORIES } from '../types';
+import {
+  COVER_THEMES,
+  LIMITS,
+  QUESTION_CATEGORIES,
+  resolveHotelLocation,
+  resolveSurveyType,
+  SURVEY_TYPE_LABELS,
+  SURVEY_TYPES,
+} from '../types';
 import type { SurveyDraftInput } from '../services/surveyService';
 
 interface SurveyBuilderViewProps {
   existingSurvey: Survey | null;
+  knownHotels?: string[];
   onSave: (draft: SurveyDraftInput, existingId?: string) => Promise<string>;
   onCancel?: () => void;
   onSavedAndShare: (surveyId: string) => void;
@@ -40,10 +50,12 @@ function createInitialDraft(survey: Survey | null): SurveyDraftInput {
   if (survey) {
     return {
       hotelName: survey.hotelName,
+      hotelLocation: resolveHotelLocation(survey),
       title: survey.title,
       welcomeMessage: survey.welcomeMessage,
       thankYouMessage: survey.thankYouMessage,
       coverTheme: survey.coverTheme,
+      surveyType: resolveSurveyType(survey),
       status: survey.status,
       allowAnonymous: survey.allowAnonymous,
       collectName: survey.collectName,
@@ -60,11 +72,13 @@ function createInitialDraft(survey: Survey | null): SurveyDraftInput {
 
   const base = SURVEY_TEMPLATES[0];
   return {
-    hotelName: 'Hotel Mirador del Alba',
+    hotelName: 'Hotel CID',
+    hotelLocation: 'Hotel CID',
     title: base.defaultTitle,
     welcomeMessage: base.defaultWelcome,
     thankYouMessage: base.defaultThankYou,
     coverTheme: base.coverTheme,
+    surveyType: base.surveyType,
     status: 'active',
     allowAnonymous: true,
     collectName: true,
@@ -78,6 +92,7 @@ function createInitialDraft(survey: Survey | null): SurveyDraftInput {
 
 export function SurveyBuilderView({
   existingSurvey,
+  knownHotels = [],
   onSave,
   onCancel,
   onSavedAndShare,
@@ -103,6 +118,7 @@ export function SurveyBuilderView({
       welcomeMessage: tpl.defaultWelcome,
       thankYouMessage: tpl.defaultThankYou,
       coverTheme: tpl.coverTheme,
+      surveyType: tpl.surveyType,
       questions: tpl.questions.map((q) => ({
         ...q,
         options: q.options ? [...q.options] : undefined,
@@ -268,14 +284,39 @@ export function SurveyBuilderView({
           <div className="space-y-4">
             <div>
               <label className="block text-xs font-medium text-slate-700 mb-1.5">
-                Nombre del hotel
+                Hotel donde se encuentra
+              </label>
+              <input
+                type="text"
+                list="known-hotels-datalist"
+                maxLength={LIMITS.HOTEL_LOCATION_MAX}
+                value={draft.hotelLocation}
+                onChange={(e) => setDraft({ ...draft, hotelLocation: e.target.value })}
+                placeholder="Ej. Hotel CID Castilla"
+                className="w-full h-10 rounded-lg border border-slate-200 bg-white px-3.5 text-sm text-slate-900 focus:border-teal-700 focus:outline-none focus:ring-2 focus:ring-teal-700/15"
+              />
+              {knownHotels.length > 0 && (
+                <datalist id="known-hotels-datalist">
+                  {knownHotels.map((hotel) => (
+                    <option key={hotel} value={hotel} />
+                  ))}
+                </datalist>
+              )}
+              <p className="text-[11px] text-slate-500 mt-1">
+                Agrupa restaurantes y encuestas del mismo hotel para filtrarlos rápidamente.
+              </p>
+            </div>
+
+            <div>
+              <label className="block text-xs font-medium text-slate-700 mb-1.5">
+                Nombre del establecimiento o restaurante
               </label>
               <input
                 type="text"
                 maxLength={LIMITS.HOTEL_NAME_MAX}
                 value={draft.hotelName}
                 onChange={(e) => setDraft({ ...draft, hotelName: e.target.value })}
-                placeholder="Ej. Hotel Mirador del Alba"
+                placeholder="Ej. Restaurante La Terraza o Hotel CID"
                 className="w-full h-10 rounded-lg border border-slate-200 bg-white px-3.5 text-sm text-slate-900 focus:border-teal-700 focus:outline-none focus:ring-2 focus:ring-teal-700/15"
               />
             </div>
@@ -292,6 +333,23 @@ export function SurveyBuilderView({
                 placeholder="Encuesta de Satisfacción de Estancia"
                 className="w-full h-10 rounded-lg border border-slate-200 bg-white px-3.5 text-sm text-slate-900 focus:border-teal-700 focus:outline-none focus:ring-2 focus:ring-teal-700/15"
               />
+            </div>
+
+            <div>
+              <label className="block text-xs font-medium text-slate-700 mb-1.5">
+                Tipo de encuesta
+              </label>
+              <select
+                value={draft.surveyType}
+                onChange={(e) => setDraft({ ...draft, surveyType: e.target.value as SurveyType })}
+                className="w-full h-10 rounded-lg border border-slate-200 bg-white px-3 text-sm text-slate-900 focus:border-teal-700 focus:outline-none focus:ring-2 focus:ring-teal-700/15"
+              >
+                {SURVEY_TYPES.map((st) => (
+                  <option key={st} value={st}>
+                    {SURVEY_TYPE_LABELS[st]}
+                  </option>
+                ))}
+              </select>
             </div>
 
             <div>

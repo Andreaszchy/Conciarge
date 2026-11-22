@@ -14,8 +14,13 @@
         },
         "hotelName": {
           "type": "string",
-          "description": "Display name of the hotel property.",
+          "description": "Display name of the hotel or restaurant shown on the survey header.",
           "minLength": 1,
+          "maxLength": 120
+        },
+        "hotelLocation": {
+          "type": "string",
+          "description": "Parent hotel property where this restaurant or outlet is located.",
           "maxLength": 120
         },
         "title": {
@@ -38,6 +43,11 @@
           "type": "string",
           "description": "Selected visual header banner theme for the guest survey.",
           "enum": ["lobby", "suite", "dining"]
+        },
+        "surveyType": {
+          "type": "string",
+          "description": "Category/type of hotel survey used for fast filtering.",
+          "enum": ["estancia", "rapida", "gastronomia", "spa", "personalizada"]
         },
         "status": {
           "type": "string",

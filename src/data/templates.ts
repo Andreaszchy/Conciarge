@@ -1,8 +1,9 @@
-import type { CoverTheme, StayType, SurveyQuestion } from '../types';
+import type { CoverTheme, StayType, SurveyQuestion, SurveyType } from '../types';
 
 export interface SurveyTemplate {
   id: string;
   name: string;
+  surveyType: SurveyType;
   description: string;
   durationLabel: string;
   coverTheme: CoverTheme;
@@ -16,6 +17,7 @@ export const SURVEY_TEMPLATES: SurveyTemplate[] = [
   {
     id: 'checkout-completa',
     name: 'Estancia Completa (Check-out)',
+    surveyType: 'estancia',
     description: 'Evalúa recepción, limpieza, comodidad de habitación, desayuno, NPS y comentarios abiertos.',
     durationLabel: '2 min · 7 preguntas',
     coverTheme: 'lobby',
@@ -79,6 +81,7 @@ export const SURVEY_TEMPLATES: SurveyTemplate[] = [
   {
     id: 'express-30s',
     name: 'Preguntas Rápidas',
+    surveyType: 'rapida',
     description: 'Ideal para códigos QR en recepción o mesillas de noche con máxima tasa de respuesta.',
     durationLabel: '30 s · 4 preguntas',
     coverTheme: 'suite',
@@ -127,6 +130,7 @@ export const SURVEY_TEMPLATES: SurveyTemplate[] = [
   {
     id: 'gastronomia',
     name: 'Restaurante y Desayuno',
+    surveyType: 'gastronomia',
     description: 'Enfocada en calidad culinaria, tiempos de servicio y variedad del buffet matinal.',
     durationLabel: '1 min · 5 preguntas',
     coverTheme: 'dining',

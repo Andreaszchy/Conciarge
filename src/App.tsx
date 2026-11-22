@@ -3,19 +3,26 @@ import { onAuthStateChanged, signInWithPopup, signOut } from 'firebase/auth';
 import type { User } from 'firebase/auth';
 import {
   BarChart3,
+  BedDouble,
+  Bell,
   Building2,
   ClipboardList,
   Download,
   ExternalLink,
   FileSpreadsheet,
   FolderKanban,
+  Grid2x2,
+  KeyRound,
   LayoutGrid,
   LogOut,
   Menu,
+  MoreHorizontal,
   Plus,
+  QrCode,
   Share2,
   SlidersHorizontal,
   Sparkles,
+  Wrench,
   X,
 } from 'lucide-react';
 import { auth, googleProvider } from './firebase';
@@ -33,19 +40,45 @@ import {
   updateSurvey,
 } from './services/surveyService';
 import type { SurveyDraftInput } from './services/surveyService';
-import type { OpinionAnalysis, Survey, SurveyResponseRecord } from './types';
-import { COVER_THEMES } from './types';
+import type { OpinionAnalysis, Survey, SurveyResponseRecord, SurveyType } from './types';
+import {
+  COVER_THEMES,
+  resolveHotelLocation,
+  resolveSurveyType,
+  SURVEY_TYPE_LABELS,
+  SURVEY_TYPES,
+} from './types';
 import { exportSurveyToExcel } from './utils/excelExport';
 import { AnalyticsView } from './components/AnalyticsView';
+import { FloorPlanView } from './components/FloorPlanView';
 import { GeneralDashboardView } from './components/GeneralDashboardView';
+import { GuestRequestsView } from './components/GuestRequestsView';
 import { GuestSurveyView } from './components/GuestSurveyView';
+import { HousekeepingView } from './components/HousekeepingView';
+import { MaintenanceView } from './components/MaintenanceView';
+import { ReceptionView } from './components/ReceptionView';
+import { ReportsView } from './components/ReportsView';
 import { ResponsesTableView } from './components/ResponsesTableView';
+import { RoomCatalogView } from './components/RoomCatalogView';
+import { RoomSurveyPublicView } from './components/RoomSurveyPublicView';
+import { RoomSurveysPanel } from './components/RoomSurveysPanel';
 import { ShareSurveyModal } from './components/ShareSurveyModal';
 import { SurveyBuilderView } from './components/SurveyBuilderView';
 import { SurveysListView } from './components/SurveysListView';
+import { HotelOpsProvider } from './context/HotelOpsContext';
 
-type DashboardSection = 'home' | 'encuestas';
+type DashboardSection =
+  | 'home'
+  | 'catalogo'
+  | 'housekeeping'
+  | 'plano'
+  | 'mantenimiento'
+  | 'recepcion'
+  | 'encuestas'
+  | 'solicitudes'
+  | 'reportes';
 type WorkspaceTab = 'analytics' | 'responses' | 'builder' | 'surveys';
+type EncuestasMode = 'room_qr' | 'general';
 
 function getPublicSurveyIdFromUrl(): string | null {
   const params = new URLSearchParams(window.location.search);
@@ -53,8 +86,22 @@ function getPublicSurveyIdFromUrl(): string | null {
   return id ? id.trim() : null;
 }
 
+function getPublicRoomSurveyIdFromPath(): string | null {
+  const match = window.location.pathname.match(/^\/encuesta\/([^/?#]+)\/?$/i);
+  return match ? decodeURIComponent(match[1]).trim() : null;
+}
+
 export default function App() {
-  // Public guest mode detection (?encuesta=<id>) — works with ZERO login
+  return (
+    <HotelOpsProvider>
+      <AppContent />
+    </HotelOpsProvider>
+  );
+}
+
+function AppContent() {
+  // Public guest mode detection: /encuesta/:roomId OR ?encuesta=<id> — works with ZERO login
+  const [publicRoomSurveyId] = useState<string | null>(() => getPublicRoomSurveyIdFromPath());
   const [publicSurveyId] = useState<string | null>(() => getPublicSurveyIdFromUrl());
   const [publicSurvey, setPublicSurvey] = useState<Survey | null>(null);
   const [publicLoading, setPublicLoading] = useState<boolean>(() => Boolean(getPublicSurveyIdFromUrl()));
@@ -74,12 +121,17 @@ export default function App() {
 
   // UI state
   const [activeSection, setActiveSection] = useState<DashboardSection>('home');
+  const [encuestasMode, setEncuestasMode] = useState<EncuestasMode>('room_qr');
   const [activeTab, setActiveTab] = useState<WorkspaceTab>('analytics');
+  const [hotelLocationFilter, setHotelLocationFilter] = useState<string>('all');
+  const [surveyTypeFilter, setSurveyTypeFilter] = useState<'all' | SurveyType>('all');
   const [creatingNew, setCreatingNew] = useState(false);
   const [previewSurvey, setPreviewSurvey] = useState<Survey | null>(null);
+  const [previewRoomSurveyId, setPreviewRoomSurveyId] = useState<string | null>(null);
   const [shareModalSurvey, setShareModalSurvey] = useState<Survey | null>(null);
   const [pendingShareSurveyId, setPendingShareSurveyId] = useState<string | null>(null);
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
+  const [mobileMoreOpen, setMobileMoreOpen] = useState(false);
   const [seedingSample, setSeedingSample] = useState(false);
 
   // AI analysis execution state
@@ -112,13 +164,13 @@ export default function App() {
 
   // 2. Listen to Firebase Auth state (only needed for hotel management workspace)
   useEffect(() => {
-    if (publicSurveyId) return;
+    if (publicSurveyId || publicRoomSurveyId) return;
     const unsub = onAuthStateChanged(auth, (currentUser) => {
       setUser(currentUser);
       setAuthReady(true);
     });
     return unsub;
-  }, [publicSurveyId]);
+  }, [publicSurveyId, publicRoomSurveyId]);
 
   // 3. Subscribe to hotel manager's surveys once authenticated
   useEffect(() => {
@@ -164,6 +216,58 @@ export default function App() {
     () => surveys.find((s) => s.id === selectedSurveyId) ?? null,
     [surveys, selectedSurveyId]
   );
+
+  const hotelLocationCounts = useMemo(() => {
+    const map = new Map<string, number>();
+    for (const s of surveys) {
+      const loc = resolveHotelLocation(s);
+      map.set(loc, (map.get(loc) || 0) + 1);
+    }
+    return Array.from(map.entries()).sort((a, b) => a[0].localeCompare(b[0], 'es'));
+  }, [surveys]);
+
+  const knownHotels = useMemo(
+    () => hotelLocationCounts.map(([hotel]) => hotel),
+    [hotelLocationCounts]
+  );
+
+  const surveysMatchingHotelFilter = useMemo(() => {
+    if (hotelLocationFilter === 'all') return surveys;
+    return surveys.filter((s) => resolveHotelLocation(s) === hotelLocationFilter);
+  }, [surveys, hotelLocationFilter]);
+
+  const surveyCountsByType = useMemo(() => {
+    const counts: Record<SurveyType, number> = {
+      estancia: 0,
+      rapida: 0,
+      gastronomia: 0,
+      spa: 0,
+      personalizada: 0,
+    };
+    for (const s of surveysMatchingHotelFilter) {
+      counts[resolveSurveyType(s)] += 1;
+    }
+    return counts;
+  }, [surveysMatchingHotelFilter]);
+
+  const filteredSidebarSurveys = useMemo(() => {
+    if (surveyTypeFilter === 'all') return surveysMatchingHotelFilter;
+    return surveysMatchingHotelFilter.filter((s) => resolveSurveyType(s) === surveyTypeFilter);
+  }, [surveysMatchingHotelFilter, surveyTypeFilter]);
+
+  const applySidebarFilters = (nextHotel: string, nextType: 'all' | SurveyType) => {
+    setHotelLocationFilter(nextHotel);
+    setSurveyTypeFilter(nextType);
+    const matching = surveys.filter((s) => {
+      if (nextHotel !== 'all' && resolveHotelLocation(s) !== nextHotel) return false;
+      if (nextType !== 'all' && resolveSurveyType(s) !== nextType) return false;
+      return true;
+    });
+    if (matching.length > 0 && !matching.some((s) => s.id === selectedSurveyId)) {
+      setSelectedSurveyId(matching[0].id);
+      setCreatingNew(false);
+    }
+  };
 
   useEffect(() => {
     if (!pendingShareSurveyId) return;
@@ -225,6 +329,17 @@ export default function App() {
     }
     const newId = await createSurvey(user.uid, draft);
     setSelectedSurveyId(newId);
+    const newHotelLoc = resolveHotelLocation({
+      hotelLocation: draft.hotelLocation,
+      hotelName: draft.hotelName,
+      title: draft.title,
+    });
+    if (hotelLocationFilter !== 'all' && hotelLocationFilter !== newHotelLoc) {
+      setHotelLocationFilter('all');
+    }
+    if (surveyTypeFilter !== 'all' && surveyTypeFilter !== draft.surveyType) {
+      setSurveyTypeFilter('all');
+    }
     setCreatingNew(false);
     return newId;
   };
@@ -253,6 +368,11 @@ export default function App() {
       setSelectedSurveyId(null);
     }
   };
+
+  // --- MODE 0: Public Room QR Survey (/encuesta/:roomId) — works with ZERO login ---
+  if (publicRoomSurveyId) {
+    return <RoomSurveyPublicView roomIdParam={publicRoomSurveyId} />;
+  }
 
   // --- MODE 1: Public Online Guest Survey (?encuesta=<id>) ---
   if (publicSurveyId) {
@@ -288,6 +408,16 @@ export default function App() {
   }
 
   // --- MODE 2: Live Interactive Guest Preview from Manager Panel ---
+  if (previewRoomSurveyId) {
+    return (
+      <RoomSurveyPublicView
+        roomIdParam={previewRoomSurveyId}
+        isPreview
+        onExitPreview={() => setPreviewRoomSurveyId(null)}
+      />
+    );
+  }
+
   if (previewSurvey) {
     return (
       <GuestSurveyView
@@ -477,10 +607,12 @@ export default function App() {
     setActiveSection(section);
     setCreatingNew(false);
     setMobileMenuOpen(false);
+    setMobileMoreOpen(false);
   };
 
   const handleSelectNav = (tab: WorkspaceTab) => {
     setActiveSection('encuestas');
+    setEncuestasMode('general');
     setCreatingNew(false);
     setActiveTab(tab);
     setMobileMenuOpen(false);
@@ -488,10 +620,27 @@ export default function App() {
 
   const handleStartNewSurvey = () => {
     setActiveSection('encuestas');
+    setEncuestasMode('general');
     setCreatingNew(true);
     setActiveTab('builder');
     setMobileMenuOpen(false);
   };
+
+  const sidebarSections: Array<{
+    id: DashboardSection;
+    label: string;
+    icon: React.ComponentType<{ className?: string }>;
+  }> = [
+    { id: 'home', label: 'Panel general', icon: LayoutGrid },
+    { id: 'catalogo', label: 'Catálogo de habitaciones', icon: BedDouble },
+    { id: 'housekeeping', label: 'Housekeeping', icon: Sparkles },
+    { id: 'plano', label: 'Plano por piso', icon: Grid2x2 },
+    { id: 'mantenimiento', label: 'Mantenimiento', icon: Wrench },
+    { id: 'recepcion', label: 'Recepción', icon: KeyRound },
+    { id: 'encuestas', label: 'Encuestas', icon: ClipboardList },
+    { id: 'solicitudes', label: 'Solicitudes', icon: Bell },
+    { id: 'reportes', label: 'Reportes', icon: BarChart3 },
+  ];
 
   const sidebarContent = (
     <div className="flex flex-col h-full">
@@ -509,112 +658,28 @@ export default function App() {
         </button>
       </div>
 
-      {/* Primary Dashboard Sections */}
-      <nav className="p-3 border-b border-slate-200 space-y-1">
-        <button
-          type="button"
-          onClick={() => handleOpenSection('home')}
-          className={`w-full flex items-center gap-2.5 px-3 py-2.5 rounded-lg text-sm font-medium transition-colors whitespace-nowrap cursor-pointer ${
-            activeSection === 'home'
-              ? 'bg-slate-900 text-white'
-              : 'text-slate-600 hover:bg-slate-100 hover:text-slate-900'
-          }`}
-        >
-          <LayoutGrid className="w-4 h-4 shrink-0" />
-          <span className="truncate">Panel general</span>
-        </button>
-
-        <button
-          type="button"
-          onClick={() => handleOpenSection('encuestas')}
-          className={`w-full flex items-center gap-2.5 px-3 py-2.5 rounded-lg text-sm font-medium transition-colors whitespace-nowrap cursor-pointer ${
-            activeSection === 'encuestas'
-              ? 'bg-slate-900 text-white'
-              : 'text-slate-600 hover:bg-slate-100 hover:text-slate-900'
-          }`}
-        >
-          <ClipboardList className="w-4 h-4 shrink-0" />
-          <span className="truncate">Encuestas</span>
-        </button>
-      </nav>
-
-      {/* Contextual Encuestas Sub-Workspace Controls */}
-      {activeSection === 'encuestas' ? (
-        <div className="flex-1 overflow-y-auto flex flex-col">
-          {/* Active Survey Switcher */}
-          <div className="p-4 border-b border-slate-200 space-y-2.5">
-            <label className="block text-[11px] font-medium text-slate-500">Encuesta activa</label>
-            {surveys.length > 0 ? (
-              <select
-                value={selectedSurveyId || ''}
-                onChange={(e) => {
-                  setSelectedSurveyId(e.target.value);
-                  setCreatingNew(false);
-                }}
-                className="w-full h-9 rounded-lg border border-slate-200 bg-slate-50 px-2.5 text-xs font-medium text-slate-900 focus:bg-white focus:border-teal-700 focus:outline-none truncate"
-              >
-                {surveys.map((s) => (
-                  <option key={s.id} value={s.id}>
-                    {s.title} ({s.hotelName})
-                  </option>
-                ))}
-              </select>
-            ) : (
-              <p className="text-xs text-slate-400">Sin encuestas aún</p>
-            )}
-
+      {/* Primary Dashboard Sections (Panel general + 8 Modules) */}
+      <nav className="flex-1 p-3 space-y-1 overflow-y-auto">
+        {sidebarSections.map((item) => {
+          const Icon = item.icon;
+          const isActive = activeSection === item.id;
+          return (
             <button
+              key={item.id}
               type="button"
-              onClick={handleStartNewSurvey}
-              className="w-full inline-flex items-center justify-center gap-1.5 h-9 px-3 text-xs font-semibold text-white bg-teal-700 rounded-lg hover:bg-teal-800 transition-colors cursor-pointer"
+              onClick={() => handleOpenSection(item.id)}
+              className={`w-full flex items-center gap-2.5 px-3 py-2.5 rounded-lg text-sm font-medium transition-colors whitespace-nowrap cursor-pointer ${
+                isActive
+                  ? 'bg-slate-900 text-white'
+                  : 'text-slate-600 hover:bg-slate-100 hover:text-slate-900'
+              }`}
             >
-              <Plus className="w-3.5 h-3.5" />
-              Nueva encuesta
+              <Icon className="w-4 h-4 shrink-0" />
+              <span className="truncate">{item.label}</span>
             </button>
-          </div>
-
-          {/* Encuestas Sub-Navigation */}
-          <nav className="flex-1 p-3 space-y-1">
-            {navItems.map((item) => {
-              const Icon = item.icon;
-              const isActive = activeTab === item.id && !(item.id === 'builder' && creatingNew);
-              return (
-                <button
-                  key={item.id}
-                  type="button"
-                  onClick={() => handleSelectNav(item.id)}
-                  className={`w-full flex items-center gap-2.5 px-3 py-2.5 rounded-lg text-sm font-medium transition-colors whitespace-nowrap cursor-pointer ${
-                    isActive
-                      ? 'bg-teal-50 text-teal-900'
-                      : 'text-slate-600 hover:bg-slate-100 hover:text-slate-900'
-                  }`}
-                >
-                  <Icon className="w-4 h-4 shrink-0" />
-                  <span className="truncate">{item.label}</span>
-                </button>
-              );
-            })}
-
-            {activeSurvey && (
-              <div className="pt-4 mt-4 border-t border-slate-200 px-1 space-y-1">
-                <button
-                  type="button"
-                  onClick={() => {
-                    setMobileMenuOpen(false);
-                    setPreviewSurvey(activeSurvey);
-                  }}
-                  className="w-full flex items-center gap-2.5 px-3 py-2 rounded-lg text-xs font-medium text-slate-600 hover:bg-slate-100 hover:text-slate-900 transition-colors cursor-pointer"
-                >
-                  <ExternalLink className="w-3.5 h-3.5 shrink-0" />
-                  Probar como huésped
-                </button>
-              </div>
-            )}
-          </nav>
-        </div>
-      ) : (
-        <div className="flex-1" />
-      )}
+          );
+        })}
+      </nav>
 
       {/* Account Footer */}
       <div className="p-4 border-t border-slate-200 flex items-center justify-between gap-2">
@@ -636,6 +701,23 @@ export default function App() {
       </div>
     </div>
   );
+
+  const sectionTitles: Record<Exclude<DashboardSection, 'home' | 'encuestas'>, string> = {
+    catalogo: 'Catálogo de Habitaciones',
+    housekeeping: 'Housekeeping',
+    plano: 'Plano por Piso',
+    mantenimiento: 'Mantenimiento',
+    recepcion: 'Recepción',
+    solicitudes: 'Solicitudes de Huéspedes',
+    reportes: 'Reportes',
+  };
+
+  const isInMoreMenu =
+    activeSection === 'home' ||
+    activeSection === 'catalogo' ||
+    activeSection === 'encuestas' ||
+    activeSection === 'solicitudes' ||
+    activeSection === 'reportes';
 
   return (
     <div className="min-h-screen bg-slate-50 text-slate-900 flex">
@@ -673,7 +755,7 @@ export default function App() {
             <div className="flex items-center gap-2 text-sm min-w-0">
               {activeSection === 'home' ? (
                 <h1 className="font-bold text-slate-900 truncate">Panel general</h1>
-              ) : (
+              ) : activeSection === 'encuestas' ? (
                 <>
                   <button
                     type="button"
@@ -691,155 +773,504 @@ export default function App() {
                   <span className="text-slate-300 hidden md:inline" aria-hidden="true">
                     /
                   </span>
-                  <h1 className="font-bold text-slate-900 truncate">{tabMeta[activeTab].label}</h1>
+                  <h1 className="font-bold text-slate-900 truncate">
+                    {encuestasMode === 'room_qr' ? 'Por habitación (QR)' : tabMeta[activeTab].label}
+                  </h1>
+                </>
+              ) : (
+                <>
+                  <button
+                    type="button"
+                    onClick={() => handleOpenSection('home')}
+                    className="text-slate-400 hover:text-slate-700 transition-colors hidden sm:inline whitespace-nowrap cursor-pointer"
+                  >
+                    Panel general
+                  </button>
+                  <span className="text-slate-300 hidden sm:inline" aria-hidden="true">
+                    /
+                  </span>
+                  <h1 className="font-bold text-slate-900 truncate">
+                    {sectionTitles[activeSection]}
+                  </h1>
                 </>
               )}
             </div>
           </div>
 
-          {activeSection === 'encuestas' && activeSurvey && !creatingNew && (
-            <div className="flex items-center gap-2.5 shrink-0">
-              <button
-                type="button"
-                onClick={() => exportSurveyToExcel(activeSurvey, responses, latestAnalysis)}
-                disabled={responses.length === 0}
-                className="hidden sm:inline-flex items-center gap-1.5 px-3.5 py-2 text-xs font-medium text-slate-700 bg-white border border-slate-300 rounded-lg hover:bg-slate-50 disabled:opacity-40 transition-colors whitespace-nowrap shrink-0 cursor-pointer"
-              >
-                <Download className="w-3.5 h-3.5" />
-                Exportar Excel
-              </button>
-              <button
-                type="button"
-                onClick={() => setShareModalSurvey(activeSurvey)}
-                className="inline-flex items-center gap-1.5 px-3.5 py-2 text-xs font-semibold text-white bg-slate-900 rounded-lg hover:bg-slate-800 transition-colors whitespace-nowrap shrink-0 cursor-pointer"
-              >
-                <Share2 className="w-3.5 h-3.5" />
-                Compartir / QR
-              </button>
-            </div>
-          )}
+          {activeSection === 'encuestas' &&
+            encuestasMode === 'general' &&
+            activeSurvey &&
+            !creatingNew && (
+              <div className="flex items-center gap-2.5 shrink-0">
+                <button
+                  type="button"
+                  onClick={() => exportSurveyToExcel(activeSurvey, responses, latestAnalysis)}
+                  disabled={responses.length === 0}
+                  className="hidden sm:inline-flex items-center gap-1.5 px-3.5 py-2 text-xs font-medium text-slate-700 bg-white border border-slate-300 rounded-lg hover:bg-slate-50 disabled:opacity-40 transition-colors whitespace-nowrap shrink-0 cursor-pointer"
+                >
+                  <Download className="w-3.5 h-3.5" />
+                  Exportar Excel
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setShareModalSurvey(activeSurvey)}
+                  className="inline-flex items-center gap-1.5 px-3.5 py-2 text-xs font-semibold text-white bg-slate-900 rounded-lg hover:bg-slate-800 transition-colors whitespace-nowrap shrink-0 cursor-pointer"
+                >
+                  <Share2 className="w-3.5 h-3.5" />
+                  Compartir / QR
+                </button>
+              </div>
+            )}
         </header>
 
         {/* Viewport Body */}
-        <main className="flex-1 p-4 sm:p-8 max-w-[1440px] w-full mx-auto">
+        <main className="flex-1 p-4 pb-24 sm:p-8 sm:pb-24 lg:pb-8 max-w-[1440px] w-full mx-auto">
           {activeSection === 'home' ? (
             <GeneralDashboardView
               userName={user.displayName}
               surveys={surveys}
               loading={surveysLoading}
-              onOpenEncuestas={() => handleOpenSection('encuestas')}
+              onOpenSection={(sec) => handleOpenSection(sec)}
             />
-          ) : surveysLoading ? (
-            <div className="space-y-4 animate-pulse">
-              <div className="h-28 bg-white border border-slate-200 rounded-xl" />
-              <div className="h-72 bg-white border border-slate-200 rounded-xl" />
-            </div>
-          ) : surveys.length === 0 && !creatingNew ? (
-            /* Empty Onboarding State */
-            <div className="max-w-3xl mx-auto my-8 bg-white border border-slate-200 rounded-2xl p-8 sm:p-10 space-y-8">
-              <div className="space-y-2">
-                <p className="text-xs font-semibold text-teal-800">Primeros pasos</p>
-                <h2 className="text-2xl font-bold text-slate-900">
-                  Crea tu primera encuesta de satisfacción hotelera
-                </h2>
-                <p className="text-sm text-slate-600 leading-relaxed max-w-2xl">
-                  Configura tus preguntas en segundos o carga una encuesta de ejemplo con 8
-                  opiniones realistas de huéspedes para probar de inmediato los gráficos, el
-                  análisis automático con IA y la exportación a Excel.
-                </p>
-              </div>
-
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                <button
-                  type="button"
-                  disabled={seedingSample}
-                  onClick={handleSeedSample}
-                  className="text-left p-6 rounded-xl border border-teal-700 bg-teal-50/40 hover:bg-teal-50/80 transition-colors space-y-2.5 cursor-pointer"
-                >
-                  <div className="flex items-center gap-2 text-teal-800">
-                    <Sparkles className="w-4 h-4" />
-                    <span className="text-sm font-bold text-slate-900">
-                      {seedingSample
-                        ? 'Creando encuesta de ejemplo...'
-                        : 'Cargar encuesta de ejemplo (8 opiniones)'}
-                    </span>
-                  </div>
-                  <p className="text-xs text-slate-600 leading-relaxed">
-                    Crea "Hotel CID" con respuestas anónimas y con contacto para
-                    explorar el análisis automático y descargar el Excel al instante.
-                  </p>
-                </button>
-
-                <button
-                  type="button"
-                  onClick={handleStartNewSurvey}
-                  className="text-left p-6 rounded-xl border border-slate-200 bg-white hover:border-slate-400 transition-colors space-y-2.5 cursor-pointer"
-                >
-                  <div className="flex items-center gap-2 text-slate-900">
+          ) : activeSection === 'catalogo' ? (
+            <RoomCatalogView />
+          ) : activeSection === 'housekeeping' ? (
+            <HousekeepingView onGoToCatalog={() => handleOpenSection('catalogo')} />
+          ) : activeSection === 'plano' ? (
+            <FloorPlanView onGoToCatalog={() => handleOpenSection('catalogo')} />
+          ) : activeSection === 'mantenimiento' ? (
+            <MaintenanceView />
+          ) : activeSection === 'recepcion' ? (
+            <ReceptionView />
+          ) : activeSection === 'solicitudes' ? (
+            <GuestRequestsView />
+          ) : activeSection === 'reportes' ? (
+            <ReportsView />
+          ) : (
+            <div className="space-y-6">
+              {/* Encuestas Mode Switcher: Por habitación (QR) vs Encuestas generales */}
+              <div className="flex flex-wrap items-center justify-between gap-3 border-b border-slate-200 pb-3">
+                <div className="flex flex-wrap items-center gap-2">
+                  <button
+                    type="button"
+                    onClick={() => setEncuestasMode('room_qr')}
+                    className={`inline-flex items-center gap-2 min-h-[40px] px-4 py-2 rounded-lg text-sm font-medium transition-colors cursor-pointer ${
+                      encuestasMode === 'room_qr'
+                        ? 'bg-slate-900 text-white'
+                        : 'bg-white border border-slate-200 text-slate-700 hover:bg-slate-50'
+                    }`}
+                  >
+                    <QrCode className="w-4 h-4" />
+                    Encuestas por habitación (QR)
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setEncuestasMode('general')}
+                    className={`inline-flex items-center gap-2 min-h-[40px] px-4 py-2 rounded-lg text-sm font-medium transition-colors cursor-pointer ${
+                      encuestasMode === 'general'
+                        ? 'bg-slate-900 text-white'
+                        : 'bg-white border border-slate-200 text-slate-700 hover:bg-slate-50'
+                    }`}
+                  >
                     <ClipboardList className="w-4 h-4" />
-                    <span className="text-sm font-bold">Diseñar mi encuesta desde cero</span>
-                  </div>
-                  <p className="text-xs text-slate-600 leading-relaxed">
-                    Elige una plantilla hotelera, define preguntas, fotografía de portada y genera tu
-                    enlace público sin registro y código QR.
-                  </p>
-                </button>
+                    Encuestas generales
+                  </button>
+                </div>
               </div>
+
+              {encuestasMode === 'room_qr' ? (
+                <RoomSurveysPanel
+                  onOpenPublicForm={(roomId) => setPreviewRoomSurveyId(roomId)}
+                  onGoToMaintenance={() => handleOpenSection('mantenimiento')}
+                  onGoToRequests={() => handleOpenSection('solicitudes')}
+                />
+              ) : (
+                <>
+                  {/* Encuestas Main Workspace Controls (Filters, Active Survey & Section Views) */}
+                  {!surveysLoading && (surveys.length > 0 || creatingNew) && (
+                    <section
+                      aria-label="Controles de encuestas"
+                      className="bg-white border border-slate-200 rounded-xl p-4 sm:p-5 space-y-4"
+                    >
+                      <div className="flex flex-col lg:flex-row lg:items-end justify-between gap-3">
+                      {surveys.length > 0 ? (
+                        <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-3 gap-3 flex-1">
+                          <div className="space-y-1">
+                            <label className="block text-xs font-medium text-slate-500">
+                              Filtrar por hotel
+                            </label>
+                            <select
+                              value={hotelLocationFilter}
+                              onChange={(e) =>
+                                applySidebarFilters(e.target.value, surveyTypeFilter)
+                              }
+                              aria-label="Filtrar encuesta activa por hotel"
+                              className="w-full h-10 rounded-lg border border-slate-200 bg-white px-3 text-sm text-slate-800 focus:border-teal-700 focus:outline-none truncate"
+                            >
+                              <option value="all">Todos los hoteles ({surveys.length})</option>
+                              {hotelLocationCounts.map(([hotel, count]) => (
+                                <option key={hotel} value={hotel}>
+                                  {hotel} ({count})
+                                </option>
+                              ))}
+                            </select>
+                          </div>
+
+                          <div className="space-y-1">
+                            <label className="block text-xs font-medium text-slate-500">
+                              Filtrar por tipo
+                            </label>
+                            <select
+                              value={surveyTypeFilter}
+                              onChange={(e) =>
+                                applySidebarFilters(
+                                  hotelLocationFilter,
+                                  e.target.value as 'all' | SurveyType
+                                )
+                              }
+                              aria-label="Filtrar encuesta activa por tipo"
+                              className="w-full h-10 rounded-lg border border-slate-200 bg-white px-3 text-sm text-slate-800 focus:border-teal-700 focus:outline-none truncate"
+                            >
+                              <option value="all">
+                                Todos los tipos ({surveysMatchingHotelFilter.length})
+                              </option>
+                              {SURVEY_TYPES.map((st) => (
+                                <option key={st} value={st}>
+                                  {SURVEY_TYPE_LABELS[st]} ({surveyCountsByType[st]})
+                                </option>
+                              ))}
+                            </select>
+                          </div>
+
+                          <div className="space-y-1 sm:col-span-2 xl:col-span-1">
+                            <label className="block text-xs font-medium text-slate-500">
+                              Encuesta activa
+                            </label>
+                            {filteredSidebarSurveys.length > 0 ? (
+                              <select
+                                value={
+                                  filteredSidebarSurveys.some((s) => s.id === selectedSurveyId)
+                                    ? selectedSurveyId || ''
+                                    : filteredSidebarSurveys[0].id
+                                }
+                                onChange={(e) => {
+                                  setSelectedSurveyId(e.target.value);
+                                  setCreatingNew(false);
+                                }}
+                                aria-label="Seleccionar encuesta activa"
+                                className="w-full h-10 rounded-lg border border-slate-200 bg-slate-50 px-3 text-sm font-medium text-slate-900 focus:bg-white focus:border-teal-700 focus:outline-none truncate"
+                              >
+                                {filteredSidebarSurveys.map((s) => (
+                                  <option key={s.id} value={s.id}>
+                                    {s.title} · {s.hotelName}
+                                  </option>
+                                ))}
+                              </select>
+                            ) : (
+                              <p className="h-10 flex items-center text-xs text-slate-500 px-1">
+                                No hay encuestas con estos filtros.
+                              </p>
+                            )}
+                          </div>
+                        </div>
+                      ) : (
+                        <div />
+                      )}
+
+                      <div className="flex flex-wrap items-center gap-2 shrink-0">
+                        {activeSurvey && !creatingNew && (
+                          <button
+                            type="button"
+                            onClick={() => setPreviewSurvey(activeSurvey)}
+                            className="inline-flex items-center justify-center gap-1.5 min-h-[40px] px-3.5 py-2 text-xs font-medium text-slate-700 bg-white border border-slate-300 rounded-lg hover:bg-slate-50 transition-colors whitespace-nowrap cursor-pointer"
+                          >
+                            <ExternalLink className="w-3.5 h-3.5 shrink-0" />
+                            Probar como huésped
+                          </button>
+                        )}
+                        <button
+                          type="button"
+                          onClick={handleStartNewSurvey}
+                          className="inline-flex items-center justify-center gap-1.5 min-h-[40px] px-4 py-2 text-xs font-semibold text-white bg-teal-700 rounded-lg hover:bg-teal-800 transition-colors whitespace-nowrap cursor-pointer"
+                        >
+                          <Plus className="w-3.5 h-3.5" />
+                          Nueva encuesta
+                        </button>
+                      </div>
+                    </div>
+
+                    {/* Encuestas Sub-Views Navigation */}
+                    <nav
+                      aria-label="Vistas de encuestas"
+                      className="pt-3 border-t border-slate-100 grid grid-cols-2 sm:flex sm:flex-wrap gap-2"
+                    >
+                      {navItems.map((item) => {
+                        const Icon = item.icon;
+                        const isActive =
+                          activeTab === item.id && !(item.id === 'builder' && creatingNew);
+                        return (
+                          <button
+                            key={item.id}
+                            type="button"
+                            onClick={() => handleSelectNav(item.id)}
+                            className={`inline-flex items-center justify-center sm:justify-start gap-2 min-h-[40px] px-3.5 py-2 rounded-lg text-xs sm:text-sm font-medium transition-colors whitespace-nowrap cursor-pointer ${
+                              isActive
+                                ? 'bg-teal-50 text-teal-900 border border-teal-700/30'
+                                : 'bg-slate-50 text-slate-600 border border-transparent hover:bg-slate-100 hover:text-slate-900'
+                            }`}
+                          >
+                            <Icon className="w-4 h-4 shrink-0" />
+                            <span className="truncate">{item.label}</span>
+                          </button>
+                        );
+                      })}
+                    </nav>
+                  </section>
+                )}
+
+                {surveysLoading ? (
+                  <div className="space-y-4 animate-pulse">
+                    <div className="h-28 bg-white border border-slate-200 rounded-xl" />
+                    <div className="h-72 bg-white border border-slate-200 rounded-xl" />
+                  </div>
+                ) : surveys.length === 0 && !creatingNew ? (
+                  /* Empty Onboarding State */
+                  <div className="max-w-3xl mx-auto my-8 bg-white border border-slate-200 rounded-2xl p-8 sm:p-10 space-y-8">
+                    <div className="space-y-2">
+                      <p className="text-xs font-semibold text-teal-800">Primeros pasos</p>
+                      <h2 className="text-2xl font-bold text-slate-900">
+                        Crea tu primera encuesta de satisfacción hotelera
+                      </h2>
+                      <p className="text-sm text-slate-600 leading-relaxed max-w-2xl">
+                        Configura tus preguntas en segundos o carga una encuesta de ejemplo con 8
+                        opiniones realistas de huéspedes para probar de inmediato los gráficos, el
+                        análisis automático con IA y la exportación a Excel.
+                      </p>
+                    </div>
+
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                      <button
+                        type="button"
+                        disabled={seedingSample}
+                        onClick={handleSeedSample}
+                        className="text-left p-6 rounded-xl border border-teal-700 bg-teal-50/40 hover:bg-teal-50/80 transition-colors space-y-2.5 cursor-pointer"
+                      >
+                        <div className="flex items-center gap-2 text-teal-800">
+                          <Sparkles className="w-4 h-4" />
+                          <span className="text-sm font-bold text-slate-900">
+                            {seedingSample
+                              ? 'Creando encuesta de ejemplo...'
+                              : 'Cargar encuesta de ejemplo (8 opiniones)'}
+                          </span>
+                        </div>
+                        <p className="text-xs text-slate-600 leading-relaxed">
+                          Crea "Hotel CID" con respuestas anónimas y con contacto para
+                          explorar el análisis automático y descargar el Excel al instante.
+                        </p>
+                      </button>
+
+                      <button
+                        type="button"
+                        onClick={handleStartNewSurvey}
+                        className="text-left p-6 rounded-xl border border-slate-200 bg-white hover:border-slate-400 transition-colors space-y-2.5 cursor-pointer"
+                      >
+                        <div className="flex items-center gap-2 text-slate-900">
+                          <ClipboardList className="w-4 h-4" />
+                          <span className="text-sm font-bold">Diseñar mi encuesta desde cero</span>
+                        </div>
+                        <p className="text-xs text-slate-600 leading-relaxed">
+                          Elige una plantilla hotelera, define preguntas, fotografía de portada y genera tu
+                          enlace público sin registro y código QR.
+                        </p>
+                      </button>
+                    </div>
+                  </div>
+                ) : creatingNew || activeTab === 'builder' ? (
+                  <SurveyBuilderView
+                    existingSurvey={creatingNew ? null : activeSurvey}
+                    knownHotels={knownHotels}
+                    onSave={handleSaveSurvey}
+                    onCancel={creatingNew ? () => setCreatingNew(false) : undefined}
+                    onSavedAndShare={(savedId) => {
+                      setSelectedSurveyId(savedId);
+                      setCreatingNew(false);
+                      const found = surveys.find((s) => s.id === savedId);
+                      if (found) {
+                        setShareModalSurvey(found);
+                      } else {
+                        setPendingShareSurveyId(savedId);
+                      }
+                    }}
+                    onPreviewSurvey={(s) => setPreviewSurvey(s)}
+                  />
+                ) : activeTab === 'surveys' ? (
+                  <SurveysListView
+                    surveys={surveys}
+                    selectedSurveyId={selectedSurveyId}
+                    onSelectSurvey={(id, goToTab = 'analytics') => {
+                      setSelectedSurveyId(id);
+                      setCreatingNew(false);
+                      setActiveTab(goToTab);
+                    }}
+                    onCreateNew={handleStartNewSurvey}
+                    onShare={(s) => setShareModalSurvey(s)}
+                    onPreview={(s) => setPreviewSurvey(s)}
+                    onToggleStatus={handleToggleStatus}
+                    onDelete={handleDeleteSurvey}
+                  />
+                ) : activeSurvey && activeTab === 'responses' ? (
+                  <ResponsesTableView
+                    survey={activeSurvey}
+                    responses={responses}
+                    latestAnalysis={latestAnalysis}
+                    onDeleteResponse={(respId) => deleteResponse(activeSurvey.id, respId)}
+                    onOpenGuestPreview={() => setPreviewSurvey(activeSurvey)}
+                  />
+                ) : activeSurvey ? (
+                  <AnalyticsView
+                    survey={activeSurvey}
+                    responses={responses}
+                    latestAnalysis={latestAnalysis}
+                    analyzing={analyzing}
+                    analysisError={analysisError}
+                    onRunAnalysis={handleRunAnalysis}
+                    onOpenShare={() => setShareModalSurvey(activeSurvey)}
+                    onOpenGuestPreview={() => setPreviewSurvey(activeSurvey)}
+                  />
+                  ) : null}
+                </>
+              )}
             </div>
-          ) : creatingNew || activeTab === 'builder' ? (
-            <SurveyBuilderView
-              existingSurvey={creatingNew ? null : activeSurvey}
-              onSave={handleSaveSurvey}
-              onCancel={creatingNew ? () => setCreatingNew(false) : undefined}
-              onSavedAndShare={(savedId) => {
-                setSelectedSurveyId(savedId);
-                setCreatingNew(false);
-                const found = surveys.find((s) => s.id === savedId);
-                if (found) {
-                  setShareModalSurvey(found);
-                } else {
-                  setPendingShareSurveyId(savedId);
-                }
-              }}
-              onPreviewSurvey={(s) => setPreviewSurvey(s)}
-            />
-          ) : activeTab === 'surveys' ? (
-            <SurveysListView
-              surveys={surveys}
-              selectedSurveyId={selectedSurveyId}
-              onSelectSurvey={(id, goToTab = 'analytics') => {
-                setSelectedSurveyId(id);
-                setCreatingNew(false);
-                setActiveTab(goToTab);
-              }}
-              onCreateNew={handleStartNewSurvey}
-              onShare={(s) => setShareModalSurvey(s)}
-              onPreview={(s) => setPreviewSurvey(s)}
-              onToggleStatus={handleToggleStatus}
-              onDelete={handleDeleteSurvey}
-            />
-          ) : activeSurvey && activeTab === 'responses' ? (
-            <ResponsesTableView
-              survey={activeSurvey}
-              responses={responses}
-              latestAnalysis={latestAnalysis}
-              onDeleteResponse={(respId) => deleteResponse(activeSurvey.id, respId)}
-              onOpenGuestPreview={() => setPreviewSurvey(activeSurvey)}
-            />
-          ) : activeSurvey ? (
-            <AnalyticsView
-              survey={activeSurvey}
-              responses={responses}
-              latestAnalysis={latestAnalysis}
-              analyzing={analyzing}
-              analysisError={analysisError}
-              onRunAnalysis={handleRunAnalysis}
-              onOpenShare={() => setShareModalSurvey(activeSurvey)}
-              onOpenGuestPreview={() => setPreviewSurvey(activeSurvey)}
-            />
-          ) : null}
+          )}
         </main>
       </div>
+
+      {/* Mobile Bottom Navigation (4 primary + Más menu for all 8 sections) */}
+      <nav
+        aria-label="Navegación operativa móvil"
+        className="lg:hidden fixed bottom-0 inset-x-0 z-30 h-16 bg-white border-t border-slate-200 grid grid-cols-5"
+      >
+        <button
+          type="button"
+          onClick={() => handleOpenSection('recepcion')}
+          className={`flex flex-col items-center justify-center gap-0.5 min-h-[44px] text-[10px] font-semibold transition-colors cursor-pointer ${
+            activeSection === 'recepcion'
+              ? 'text-teal-800 bg-teal-50/50'
+              : 'text-slate-500 hover:text-slate-900'
+          }`}
+        >
+          <KeyRound className="w-5 h-5" />
+          <span>Recepción</span>
+        </button>
+
+        <button
+          type="button"
+          onClick={() => handleOpenSection('housekeeping')}
+          className={`flex flex-col items-center justify-center gap-0.5 min-h-[44px] text-[10px] font-semibold transition-colors cursor-pointer ${
+            activeSection === 'housekeeping'
+              ? 'text-teal-800 bg-teal-50/50'
+              : 'text-slate-500 hover:text-slate-900'
+          }`}
+        >
+          <Sparkles className="w-5 h-5" />
+          <span>Limpieza</span>
+        </button>
+
+        <button
+          type="button"
+          onClick={() => handleOpenSection('plano')}
+          className={`flex flex-col items-center justify-center gap-0.5 min-h-[44px] text-[10px] font-semibold transition-colors cursor-pointer ${
+            activeSection === 'plano'
+              ? 'text-teal-800 bg-teal-50/50'
+              : 'text-slate-500 hover:text-slate-900'
+          }`}
+        >
+          <Grid2x2 className="w-5 h-5" />
+          <span>Plano</span>
+        </button>
+
+        <button
+          type="button"
+          onClick={() => handleOpenSection('mantenimiento')}
+          className={`flex flex-col items-center justify-center gap-0.5 min-h-[44px] text-[10px] font-semibold transition-colors cursor-pointer ${
+            activeSection === 'mantenimiento'
+              ? 'text-teal-800 bg-teal-50/50'
+              : 'text-slate-500 hover:text-slate-900'
+          }`}
+        >
+          <Wrench className="w-5 h-5" />
+          <span>Mant.</span>
+        </button>
+
+        <button
+          type="button"
+          onClick={() => setMobileMoreOpen((v) => !v)}
+          className={`flex flex-col items-center justify-center gap-0.5 min-h-[44px] text-[10px] font-semibold transition-colors cursor-pointer ${
+            mobileMoreOpen || isInMoreMenu
+              ? 'text-teal-800 bg-teal-50/50'
+              : 'text-slate-500 hover:text-slate-900'
+          }`}
+        >
+          <MoreHorizontal className="w-5 h-5" />
+          <span>Más</span>
+        </button>
+      </nav>
+
+      {/* Mobile "Más" Bottom Sheet */}
+      {mobileMoreOpen && (
+        <div
+          className="lg:hidden fixed inset-0 z-40 flex flex-col justify-end bg-slate-950/40"
+          role="dialog"
+          aria-modal="true"
+          aria-label="Más secciones"
+        >
+          <div className="flex-1" onClick={() => setMobileMoreOpen(false)} aria-hidden="true" />
+          <div className="bg-white border-t border-slate-200 rounded-t-2xl p-4 pb-20 space-y-3 shadow-2xl">
+            <div className="flex items-center justify-between px-1">
+              <span className="text-xs font-bold uppercase tracking-wider text-slate-500">
+                Más secciones
+              </span>
+              <button
+                type="button"
+                onClick={() => setMobileMoreOpen(false)}
+                aria-label="Cerrar menú más"
+                className="p-1.5 text-slate-400 hover:text-slate-800 cursor-pointer"
+              >
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+            <div className="grid grid-cols-2 gap-2">
+              {(
+                [
+                  { id: 'catalogo', label: 'Catálogo', icon: BedDouble },
+                  { id: 'encuestas', label: 'Encuestas', icon: ClipboardList },
+                  { id: 'solicitudes', label: 'Solicitudes', icon: Bell },
+                  { id: 'reportes', label: 'Reportes', icon: BarChart3 },
+                  { id: 'home', label: 'Panel general', icon: LayoutGrid },
+                ] as const
+              ).map((item) => {
+                const Icon = item.icon;
+                const isActive = activeSection === item.id;
+                return (
+                  <button
+                    key={item.id}
+                    type="button"
+                    onClick={() => handleOpenSection(item.id)}
+                    className={`flex items-center gap-2.5 min-h-[46px] px-3.5 py-2.5 rounded-xl border text-xs font-semibold transition-colors cursor-pointer ${
+                      isActive
+                        ? 'bg-slate-900 text-white border-slate-900'
+                        : 'bg-slate-50 text-slate-800 border-slate-200 hover:bg-slate-100'
+                    }`}
+                  >
+                    <Icon className="w-4 h-4 shrink-0" />
+                    <span>{item.label}</span>
+                  </button>
+                );
+              })}
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* Share & QR Modal */}
       {shareModalSurvey && (
